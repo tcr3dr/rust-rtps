@@ -1,0 +1,4 @@
+[package]
+name = "dds"
+version = "0.1.0"
+authors = ["Tim Ryan <tim@3drobotics.com>"]
