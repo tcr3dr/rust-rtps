@@ -1,7 +1,8 @@
 // 8.2.1
 
 use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::Arc;
+use std::thread;
 
 type SeqNum = u64;
 
@@ -72,7 +73,7 @@ struct Writer {
     sequence_number:SeqNum,
     history_cache:HistoryCache,
 
-    _target:Option<Rc<RefCell<Reader>>>,
+    _target:Option<Arc<RefCell<Reader>>>,
 }
 
 impl Writer {
@@ -178,21 +179,23 @@ impl HistoryCache {
 
 #[test]
 fn test_8_4_1_1() {
-    let mut writer = Writer::new();
-    let reader = Reader::new();
+    thread::spawn(move || {
+        let mut writer = Writer::new();
+        let reader = Reader::new();
 
-    writer._target = Some(Rc::new(RefCell::new(reader)));
+        writer._target = Some(Arc::new(RefCell::new(reader)));
 
-    let change = writer.new_change();
-    writer.history_cache.add_change(change);
+        let change = writer.new_change();
+        writer.history_cache.add_change(change);
 
-    // on writer's thread...
-    // TODO: history cache thread or writer thread?
+        // on writer's thread...
+        // TODO: history cache thread or writer thread?
 
-    let target = writer._target.unwrap();
-    target.borrow_mut()._message(SubmessageKind::Data);
-    target.borrow_mut()._message(SubmessageKind::Heartbeat);
+        let target = writer._target.unwrap();
+        target.borrow_mut()._message(SubmessageKind::Data);
+        target.borrow_mut()._message(SubmessageKind::Heartbeat);
 
-    // The StatefulWriter records that the RTPS Reader has received the CacheChange and adds it to the set of
-    // acked_changes maintained by the ReaderProxy using the acked_changes_set operation
+        // The StatefulWriter records that the RTPS Reader has received the CacheChange and adds it to the set of
+        // acked_changes maintained by the ReaderProxy using the acked_changes_set operation
+    }).join();
 }

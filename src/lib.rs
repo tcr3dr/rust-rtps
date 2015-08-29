@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 #![allow(unused_must_use)]
+#![allow(unused_imports)]
 
 mod rtps;
 
