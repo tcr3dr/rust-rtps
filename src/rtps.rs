@@ -186,6 +186,16 @@ impl HistoryCache {
     }
 }
 
+fn send_socket(tx:&UdpSocket, msg:&SubmessageKind) {
+    tx.send_to(json::encode(msg).unwrap().as_bytes(), &"127.0.0.1:7556");
+}
+
+fn recv_socket(rx:&UdpSocket) -> SubmessageKind {
+    let mut buf = [0; 256];
+    let (amt, _) = rx.recv_from(&mut buf).unwrap();
+    json::decode(str::from_utf8(&buf[0..amt]).unwrap()).unwrap()
+}
+
 #[test]
 fn test_8_4_1_1() {
     let a = thread::spawn(move || {
@@ -199,13 +209,10 @@ fn test_8_4_1_1() {
         // on writer's thread...
         // TODO: history cache thread or writer thread?
 
-        // SERIALIZE, ...
-        // DESERIALIZE...
-
         let tx:UdpSocket = UdpSocket::bind("127.0.0.1:7555").unwrap();
 
-        tx.send_to(json::encode(&SubmessageKind::Data).unwrap().as_bytes(), &"127.0.0.1:7556");
-        tx.send_to(json::encode(&SubmessageKind::Heartbeat).unwrap().as_bytes(), &"127.0.0.1:7556");
+        send_socket(&tx, &SubmessageKind::Data);
+        send_socket(&tx, &SubmessageKind::Heartbeat);
         
         drop(tx); // close the socket
     });
@@ -213,15 +220,9 @@ fn test_8_4_1_1() {
     let b = thread::spawn(move || {
         let mut reader = Reader::new();
         let rx:UdpSocket = UdpSocket::bind("127.0.0.1:7556").unwrap();
-        let mut buf = [0; 256];
 
-        let (amt, _) = rx.recv_from(&mut buf).unwrap();
-        let msg:SubmessageKind = json::decode(str::from_utf8(&buf[0..amt]).unwrap()).unwrap();
-        reader._message(msg);
-
-        let (amt, _) = rx.recv_from(&mut buf).unwrap();
-        let msg:SubmessageKind = json::decode(str::from_utf8(&buf[0..amt]).unwrap()).unwrap();
-        reader._message(msg);
+        reader._message(recv_socket(&rx));
+        reader._message(recv_socket(&rx));
 
         drop(rx); // close the socket
 
