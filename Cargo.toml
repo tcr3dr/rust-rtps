@@ -8,3 +8,4 @@ license = "MIT"
 [dependencies]
 rustc-serialize = "0.3"
 mio = "0.4.0"
+log = "0.3.2"

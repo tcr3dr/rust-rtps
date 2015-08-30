@@ -5,6 +5,9 @@
 extern crate rustc_serialize;
 extern crate mio;
 
+#[macro_use]
+extern crate log;
+
 mod rtps;
 
 struct Entity;

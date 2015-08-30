@@ -3,12 +3,12 @@
 use std::cell::RefCell;
 use std::sync::Arc;
 use std::thread;
-use std::net::UdpSocket;
 use rustc_serialize::json;
 use std::str;
-// use mio::*;
-// use mio::udp::*;
-// use bytes::{Buf, RingBuf, SliceBuf, MutSliceBuf};
+use mio::*;
+use mio::udp::*;
+use std::net::ToSocketAddrs;
+use mio::buf::{RingBuf, SliceBuf, MutSliceBuf};
 
 type SeqNum = u64;
 
@@ -197,23 +197,78 @@ impl HistoryCache {
 }
 
 fn send_socket(tx:&UdpSocket, msg:&SubmessageKind) {
-    tx.send_to(json::encode(msg).unwrap().as_bytes(), &"127.0.0.1:7556");
+    let mut buf = RingBuf::new(1024);
+    buf.write_slice(json::encode(msg).unwrap().as_bytes());
+    tx.send_to(&mut buf, &"127.0.0.1:7556".to_socket_addrs().unwrap().next().unwrap()).unwrap();
 }
 
 fn recv_socket(rx:&UdpSocket) -> SubmessageKind {
-    let mut buf = [0; 256];
-    let (amt, _) = rx.recv_from(&mut buf).unwrap();
-    json::decode(str::from_utf8(&buf[0..amt]).unwrap()).unwrap()
+    let mut buf = RingBuf::new(1024);
+    rx.recv_from(&mut buf).unwrap();
+    json::decode(str::from_utf8(buf.bytes()).unwrap()).unwrap()
+}
+
+struct TxHandler {
+    tx: UdpSocket,
+    writer: Writer,
+}
+
+impl TxHandler {
+    fn new(writer:Writer, tx: UdpSocket) -> TxHandler {
+        TxHandler {
+            tx: tx,
+            writer: writer,
+        }
+    }
+}
+
+impl Handler for TxHandler {
+    type Timeout = usize;
+    type Message = ();
+    
+    fn ready(&mut self, event_loop: &mut EventLoop<TxHandler>, _: Token, events: EventSet) {
+        if events.is_writable() {
+            debug!("We are writing a datagram now...");
+            send_socket(&self.tx, &SubmessageKind::Data);
+            send_socket(&self.tx, &SubmessageKind::Heartbeat);
+            event_loop.shutdown();
+        }
+    }
+}
+
+struct RxHandler {
+    rx: UdpSocket,
+    reader: Reader,
+}
+
+impl RxHandler {
+    fn new(reader:Reader, rx: UdpSocket) -> RxHandler {
+        RxHandler {
+            rx: rx,
+            reader: reader,
+        }
+    }
+}
+
+impl Handler for RxHandler {
+    type Timeout = usize;
+    type Message = ();
+    
+    fn ready(&mut self, event_loop: &mut EventLoop<RxHandler>, _: Token, events: EventSet) {
+        if events.is_readable() {
+            debug!("We are receiving a datagram now...");
+            self.reader._message(recv_socket(&self.rx));
+            event_loop.shutdown();
+        }
+    }
 }
 
 #[test]
 fn test_8_4_1_1() {
-    // let mut event_loop = EventLoop::new().unwrap();
-    
     let a = thread::spawn(move || {
-        let mut writer = Writer::new();
+        let mut event_loop = EventLoop::new().unwrap();
 
-        // writer._target = Some(Arc::new(RefCell::new(reader)));
+        let mut writer = Writer::new();
 
         let change = writer.new_change();
         writer.history_cache.add_change(change);
@@ -221,22 +276,32 @@ fn test_8_4_1_1() {
         // on writer's thread...
         // TODO: history cache thread or writer thread?
 
-        let tx:UdpSocket = UdpSocket::bind("127.0.0.1:7555").unwrap();
+        let tx = UdpSocket::bound(&"127.0.0.1:7555".to_socket_addrs().unwrap().next().unwrap()).unwrap();
+        // let tx:UdpSocket = UdpSocket::bind("127.0.0.1:7555").unwrap();
 
-        send_socket(&tx, &SubmessageKind::Data);
-        send_socket(&tx, &SubmessageKind::Heartbeat);
+        event_loop.register_opt(&tx, Token(1), EventSet::writable(), PollOpt::edge()).unwrap();
+        // send_socket(&tx, &SubmessageKind::Data);
+        // send_socket(&tx, &SubmessageKind::Heartbeat);
         
-        drop(tx); // close the socket
+        // drop(tx); // close the socket
+        event_loop.run(&mut TxHandler::new(writer, tx)).unwrap();
     });
 
     let b = thread::spawn(move || {
-        let mut reader = Reader::new();
-        let rx:UdpSocket = UdpSocket::bind("127.0.0.1:7556").unwrap();
+        let mut event_loop = EventLoop::new().unwrap();
 
-        reader._message(recv_socket(&rx));
-        reader._message(recv_socket(&rx));
+        let reader = Reader::new();
+        let rx = UdpSocket::bound(&"127.0.0.1:7556".to_socket_addrs().unwrap().next().unwrap()).unwrap();
+        // let rx:UdpSocket = UdpSocket::bind("127.0.0.1:7556").unwrap();
 
-        drop(rx); // close the socket
+        event_loop.register_opt(&rx, Token(0), EventSet::readable(), PollOpt::edge()).unwrap();
+
+        event_loop.run(&mut RxHandler::new(reader, rx)).unwrap();
+
+        // reader._message(recv_socket(&rx));
+        // reader._message(recv_socket(&rx));
+
+        // drop(rx); // close the socket
 
         // The StatefulWriter records that the RTPS Reader has received the CacheChange and adds it to the set of
         // acked_changes maintained by the ReaderProxy using the acked_changes_set operation
