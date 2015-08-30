@@ -2,6 +2,8 @@
 #![allow(unused_must_use)]
 #![allow(unused_imports)]
 
+extern crate rustc_serialize;
+
 mod rtps;
 
 struct Entity;

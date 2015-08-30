@@ -1,4 +1,9 @@
 [package]
 name = "dds"
 version = "0.1.0"
-authors = ["Tim Ryan <tim@3drobotics.com>"]
+authors = ["Tim Ryan <id@timryan.org>"]
+description = "Implementation of DDS, someday"
+license = "MIT"
+
+[dependencies]
+rustc-serialize = "0.3"

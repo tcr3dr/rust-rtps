@@ -3,12 +3,17 @@
 use std::cell::RefCell;
 use std::sync::Arc;
 use std::thread;
+use std::net::UdpSocket;
+use rustc_serialize::json;
+use std::str;
 
 type SeqNum = u64;
 
 #[derive(PartialEq, Clone)]
+#[derive(RustcEncodable, RustcDecodable)]
 struct Guid(pub u64);
 
+#[derive(RustcEncodable, RustcDecodable)]
 struct Locator(pub u64);
 
 trait Entity {
@@ -26,6 +31,8 @@ struct Header {
     guid_prefix:u8,
 }
 
+#[derive(RustcEncodable, RustcDecodable)]
+#[derive(Debug)]
 enum SubmessageKind {
     Data,
     DataFrag,
@@ -130,11 +137,13 @@ impl Reader {
 }
 
 #[derive(PartialEq)]
+#[derive(RustcEncodable, RustcDecodable)]
 enum ChangeKind {
     Kind,
 }
 
 #[derive(PartialEq)]
+#[derive(RustcEncodable, RustcDecodable)]
 struct CacheChange {
     kind:ChangeKind,
     writer_guid:Guid,
@@ -192,8 +201,26 @@ fn test_8_4_1_1() {
         // TODO: history cache thread or writer thread?
 
         let target = writer._target.unwrap();
-        target.borrow_mut()._message(SubmessageKind::Data);
-        target.borrow_mut()._message(SubmessageKind::Heartbeat);
+
+        // SERIALIZE, ...
+        // DESERIALIZE...
+
+        let tx:UdpSocket = UdpSocket::bind("127.0.0.1:7555").unwrap();
+        let rx:UdpSocket = UdpSocket::bind("127.0.0.1:7556").unwrap();
+        let mut buf = [0; 256];
+
+        tx.send_to(json::encode(&SubmessageKind::Data).unwrap().as_bytes(), &"127.0.0.1:7556");
+        let (amt, _) = rx.recv_from(&mut buf).unwrap();
+        let msg:SubmessageKind = json::decode(str::from_utf8(&buf[0..amt]).unwrap()).unwrap();
+        target.borrow_mut()._message(msg);
+
+        tx.send_to(json::encode(&SubmessageKind::Heartbeat).unwrap().as_bytes(), &"127.0.0.1:7556");
+        let (amt, _) = rx.recv_from(&mut buf).unwrap();
+        let msg:SubmessageKind = json::decode(str::from_utf8(&buf[0..amt]).unwrap()).unwrap();
+        target.borrow_mut()._message(msg);
+
+        drop(rx); // close the socket
+        drop(tx); // close the socket
 
         // The StatefulWriter records that the RTPS Reader has received the CacheChange and adds it to the set of
         // acked_changes maintained by the ReaderProxy using the acked_changes_set operation
