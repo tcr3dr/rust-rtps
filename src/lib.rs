@@ -3,6 +3,7 @@
 #![allow(unused_imports)]
 
 extern crate rustc_serialize;
+extern crate mio;
 
 mod rtps;
 

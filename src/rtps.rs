@@ -6,6 +6,9 @@ use std::thread;
 use std::net::UdpSocket;
 use rustc_serialize::json;
 use std::str;
+// use mio::*;
+// use mio::udp::*;
+// use bytes::{Buf, RingBuf, SliceBuf, MutSliceBuf};
 
 type SeqNum = u64;
 
@@ -205,6 +208,8 @@ fn recv_socket(rx:&UdpSocket) -> SubmessageKind {
 
 #[test]
 fn test_8_4_1_1() {
+    // let mut event_loop = EventLoop::new().unwrap();
+    
     let a = thread::spawn(move || {
         let mut writer = Writer::new();
 
