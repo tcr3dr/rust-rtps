@@ -152,6 +152,13 @@ struct CacheChange {
     data:Vec<u8>,
 }
 
+type Status = Result<(), ()>;
+
+#[allow(non_upper_case_globals)]
+const Success:Status = Ok(());
+#[allow(non_upper_case_globals)]
+const Failure:Status = Err(());
+
 struct HistoryCache {
     changes:Vec<CacheChange>,
 }
@@ -163,16 +170,16 @@ impl HistoryCache {
         }
     }
 
-    fn add_change(&mut self, change:CacheChange) -> Result<(), ()> {
+    fn add_change(&mut self, change:CacheChange) -> Status {
         self.changes.push(change);
-        Ok(())
+        Success
     }
 
-    fn remove_change(&mut self, change:CacheChange) -> Result<(), ()> {
+    fn remove_change(&mut self, change:CacheChange) -> Status {
         if let Some(pos) = self.changes.iter().position(|r| *r == change) {
             self.changes.remove(pos);
         }
-        Ok(())
+        Success
     }
 
     // fn get_change(&self) {}
