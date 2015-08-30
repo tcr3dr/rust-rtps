@@ -188,11 +188,10 @@ impl HistoryCache {
 
 #[test]
 fn test_8_4_1_1() {
-    thread::spawn(move || {
+    let a = thread::spawn(move || {
         let mut writer = Writer::new();
-        let reader = Reader::new();
 
-        writer._target = Some(Arc::new(RefCell::new(reader)));
+        // writer._target = Some(Arc::new(RefCell::new(reader)));
 
         let change = writer.new_change();
         writer.history_cache.add_change(change);
@@ -200,29 +199,36 @@ fn test_8_4_1_1() {
         // on writer's thread...
         // TODO: history cache thread or writer thread?
 
-        let target = writer._target.unwrap();
-
         // SERIALIZE, ...
         // DESERIALIZE...
 
         let tx:UdpSocket = UdpSocket::bind("127.0.0.1:7555").unwrap();
+
+        tx.send_to(json::encode(&SubmessageKind::Data).unwrap().as_bytes(), &"127.0.0.1:7556");
+        tx.send_to(json::encode(&SubmessageKind::Heartbeat).unwrap().as_bytes(), &"127.0.0.1:7556");
+        
+        drop(tx); // close the socket
+    });
+
+    let b = thread::spawn(move || {
+        let mut reader = Reader::new();
         let rx:UdpSocket = UdpSocket::bind("127.0.0.1:7556").unwrap();
         let mut buf = [0; 256];
 
-        tx.send_to(json::encode(&SubmessageKind::Data).unwrap().as_bytes(), &"127.0.0.1:7556");
         let (amt, _) = rx.recv_from(&mut buf).unwrap();
         let msg:SubmessageKind = json::decode(str::from_utf8(&buf[0..amt]).unwrap()).unwrap();
-        target.borrow_mut()._message(msg);
+        reader._message(msg);
 
-        tx.send_to(json::encode(&SubmessageKind::Heartbeat).unwrap().as_bytes(), &"127.0.0.1:7556");
         let (amt, _) = rx.recv_from(&mut buf).unwrap();
         let msg:SubmessageKind = json::decode(str::from_utf8(&buf[0..amt]).unwrap()).unwrap();
-        target.borrow_mut()._message(msg);
+        reader._message(msg);
 
         drop(rx); // close the socket
-        drop(tx); // close the socket
 
         // The StatefulWriter records that the RTPS Reader has received the CacheChange and adds it to the set of
         // acked_changes maintained by the ReaderProxy using the acked_changes_set operation
-    }).join();
+    });
+
+    let _ = a.join();
+    let _ = b.join();
 }
