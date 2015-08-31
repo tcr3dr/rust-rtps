@@ -10,6 +10,7 @@ use mio::udp::*;
 use std::net::ToSocketAddrs;
 use mio::buf::{RingBuf, SliceBuf, MutSliceBuf};
 use std::collections::VecDeque;
+use std::net::SocketAddr;
 
 type SeqNum = u64;
 
@@ -121,7 +122,7 @@ impl Reader {
         }
     }
 
-    fn _message(&mut self, message:SubmessageKind) {
+    fn _message(&mut self, message:SubmessageKind) -> SubmessageKind {
         match message {
             SubmessageKind::Data => {
                 self.history_cache.add_change(CacheChange {
@@ -137,6 +138,7 @@ impl Reader {
             },
             _ => { }
         }
+        message
     }
 }
 
@@ -253,11 +255,15 @@ struct RxHandler {
 }
 
 impl RxHandler {
-    fn new(reader:Reader, rx: UdpSocket) -> RxHandler {
+    fn new<A: ToSocketAddrs>(reader:Reader, addr: &A) -> RxHandler {
         RxHandler {
-            rx: rx,
+            rx: UdpSocket::bound(&addr.to_socket_addrs().unwrap().next().unwrap()).unwrap(),
             reader: reader,
         }
+    }
+
+    fn register(&mut self, event_loop: &mut EventLoop<RxHandler>) {
+        event_loop.register_opt(&self.rx, Token(0), EventSet::readable(), PollOpt::edge()).unwrap();
     }
 }
 
@@ -268,8 +274,15 @@ impl Handler for RxHandler {
     fn ready(&mut self, event_loop: &mut EventLoop<RxHandler>, _: Token, events: EventSet) {
         if events.is_readable() {
             debug!("We are receiving a datagram now...");
-            self.reader._message(recv_socket(&self.rx));
-            event_loop.shutdown();
+            let msg = self.reader._message(recv_socket(&self.rx));
+
+            match msg {
+                SubmessageKind::Data => {},
+                SubmessageKind::Heartbeat => {
+                    event_loop.shutdown();
+                },
+                _ => {},
+            }
         }
     }
 }
@@ -302,11 +315,10 @@ fn test_8_4_1_1() {
         let mut event_loop = EventLoop::new().unwrap();
 
         let reader = Reader::new();
-        let rx = UdpSocket::bound(&"127.0.0.1:7556".to_socket_addrs().unwrap().next().unwrap()).unwrap();
-        // let rx:UdpSocket = UdpSocket::bind("127.0.0.1:7556").unwrap();
-
-        event_loop.register_opt(&rx, Token(0), EventSet::readable(), PollOpt::edge()).unwrap();
-        event_loop.run(&mut RxHandler::new(reader, rx)).unwrap();
+        
+        let mut handler = RxHandler::new(reader, &"127.0.0.1:7556");
+        handler.register(&mut event_loop);
+        event_loop.run(&mut handler).unwrap();
 
         // The StatefulWriter records that the RTPS Reader has received the CacheChange and adds it to the set of
         // acked_changes maintained by the ReaderProxy using the acked_changes_set operation
