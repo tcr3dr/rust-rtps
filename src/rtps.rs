@@ -317,6 +317,7 @@ fn test_8_4_1_1() {
         let reader = Reader::new();
         
         let mut handler = RxHandler::new(reader, &"127.0.0.1:7556");
+        // handler.rx.join_multicast(&"227.1.1.100".parse().unwrap()).unwrap();
         handler.register(&mut event_loop);
         event_loop.run(&mut handler).unwrap();
 
