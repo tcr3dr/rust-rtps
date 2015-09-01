@@ -11,6 +11,7 @@ use std::net::ToSocketAddrs;
 use mio::buf::{RingBuf, SliceBuf, MutSliceBuf};
 use std::collections::VecDeque;
 use std::net::SocketAddr;
+use std::thread::sleep_ms;
 
 type SeqNum = u64;
 
@@ -202,7 +203,7 @@ impl HistoryCache {
 fn send_socket(tx:&UdpSocket, msg:&SubmessageKind) {
     let mut buf = RingBuf::new(1024);
     buf.write_slice(json::encode(msg).unwrap().as_bytes());
-    tx.send_to(&mut buf, &"127.0.0.1:7556".to_socket_addrs().unwrap().next().unwrap()).unwrap();
+    tx.send_to(&mut buf, &"227.1.1.100:7556".parse().unwrap());
 }
 
 fn recv_socket(rx:&UdpSocket) -> SubmessageKind {
@@ -210,6 +211,8 @@ fn recv_socket(rx:&UdpSocket) -> SubmessageKind {
     rx.recv_from(&mut buf).unwrap();
     json::decode(str::from_utf8(buf.bytes()).unwrap()).unwrap()
 }
+
+const TOKEN_WRITER: Token = Token(0);
 
 struct TxHandler {
     tx: UdpSocket,
@@ -231,7 +234,7 @@ impl Handler for TxHandler {
     type Timeout = usize;
     type Message = ();
     
-    fn ready(&mut self, event_loop: &mut EventLoop<TxHandler>, _: Token, events: EventSet) {
+    fn ready(&mut self, event_loop: &mut EventLoop<TxHandler>, token: Token, events: EventSet) {
         if events.is_writable() {
             match self.queue.pop_front() {
                 Some(msg) => {
@@ -300,14 +303,15 @@ fn test_8_4_1_1() {
         // on writer's thread...
         // TODO: history cache thread or writer thread?
 
-        let tx = UdpSocket::bound(&"127.0.0.1:7555".to_socket_addrs().unwrap().next().unwrap()).unwrap();
-        // let tx:UdpSocket = UdpSocket::bind("127.0.0.1:7555").unwrap();
+        let tx = UdpSocket::bound(&"127.0.0.1:7555".parse().unwrap()).unwrap();
 
-        event_loop.register_opt(&tx, Token(1), EventSet::writable(), PollOpt::edge()).unwrap();
+        event_loop.register_opt(&tx, TOKEN_WRITER, EventSet::writable(), PollOpt::edge()).unwrap();
 
         let mut handler = TxHandler::new(writer, tx);
         handler.queue.push_back(SubmessageKind::Data);
         handler.queue.push_back(SubmessageKind::Heartbeat);
+
+        sleep_ms(200);
         event_loop.run(&mut handler).unwrap();
     });
 
@@ -316,8 +320,9 @@ fn test_8_4_1_1() {
 
         let reader = Reader::new();
         
-        let mut handler = RxHandler::new(reader, &"127.0.0.1:7556");
-        // handler.rx.join_multicast(&"227.1.1.100".parse().unwrap()).unwrap();
+        let mut handler = RxHandler::new(reader, &"0.0.0.0:7556");
+        handler.rx.join_multicast(&"227.1.1.100".parse().unwrap()).unwrap();
+
         handler.register(&mut event_loop);
         event_loop.run(&mut handler).unwrap();
 
